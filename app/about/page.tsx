@@ -2,6 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { isAdmin } from "@/lib/auth";
 import { kv } from "@vercel/kv";
+import { Lora } from "next/font/google";
+import { AboutPhotoControls } from "./AboutPhotoControls";
+
+const aboutSerif = Lora({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
 
 async function getPhotoUrl(): Promise<string | null> {
   try {
@@ -17,8 +24,10 @@ export default async function AboutPage() {
   const admin = await isAdmin();
 
   return (
-    <article className="flex flex-col space-y-12 pb-16">
-      <header className="space-y-8">
+    <article
+      className={`${aboutSerif.className} flex flex-col space-y-12 pb-16`}
+    >
+      <header className="space-y-6">
         <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 md:text-5xl">
           About me
         </h1>
@@ -34,6 +43,7 @@ export default async function AboutPage() {
             />
           </div>
         )}
+        {admin && <AboutPhotoControls />}
       </header>
 
       <section className="space-y-4">
@@ -108,24 +118,30 @@ export default async function AboutPage() {
             https://github.com/zbjgrhr
           </a>
           {"\n"}
-          Instagram: wdmywtfwdmwdllmheihei
+          Instagram:{" "}
+          <a
+            href="https://www.instagram.com/wdmywtfwdmwdllmheihei?igsh=MWJ2eXYycXJyN2Fzbw%3D%3D&utm_source=qr"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-zinc-900 underline hover:no-underline dark:text-zinc-50"
+          >
+            https://www.instagram.com/wdmywtfwdmwdllmheihei?igsh=MWJ2eXYycXJyN2Fzbw%3D%3D&utm_source=qr
+          </a> 
           {"\n"}
           WeChat: louiyuelaiyuehao
           {"\n"}
-          RedBook: 945417255
+          RedBook:{" "}
+          <a
+            href="https://xhslink.com/m/991vm7YnBjbllmheihei?igsh=MWJ2eXYycXJyN2Fzbw%3D%3D&utm_source=qr"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-zinc-900 underline hover:no-underline dark:text-zinc-50"
+          >
+            https://xhslink.com/m/991vm7YnBjb
+          </a>
         </p>
       </section>
 
-      {admin && (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          <Link
-            href="/admin/about"
-            className="underline hover:no-underline"
-          >
-            Edit profile photo
-          </Link>
-        </p>
-      )}
     </article>
   );
 }

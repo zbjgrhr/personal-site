@@ -26,6 +26,18 @@ export function AdminNav() {
       >
         Blog
       </Link>
+      <Link
+        href="/admin/music"
+        className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+      >
+        Music
+      </Link>
+      <Link
+        href="/admin/work"
+        className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+      >
+        Work
+      </Link>
       <form action="/api/auth/logout" method="POST" className="ml-auto">
         <button
           type="submit"

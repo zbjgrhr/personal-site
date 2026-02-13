@@ -1,36 +1,54 @@
 import { notFound } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { getTagStyles } from "@/lib/musicTags";
+import { HoverPlayMedia } from "../HoverPlayMedia";
 
-const KEY = "blog:posts";
+const KEY = "music:posts";
 
-type BlogPost = {
+const VALID_TAGS = ["Voc.", "Wr.", "Aud."] as const;
+
+type MusicPost = {
   id: string;
   slug: string;
   title: string;
   content: string;
   imageUrls: string[];
+  videoUrls: string[];
+  tag: string;
   createdAt: string;
 };
 
-function parsePosts(data: unknown): BlogPost[] {
+function parsePosts(data: unknown): MusicPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is MusicPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as MusicPost).id === "string" &&
+        typeof (p as MusicPost).slug === "string" &&
+        typeof (p as MusicPost).title === "string" &&
+        typeof (p as MusicPost).content === "string" &&
+        Array.isArray((p as MusicPost).imageUrls) &&
+        typeof (p as MusicPost).createdAt === "string"
+    )
+    .map((p) => {
+      const raw = p as MusicPost & { tag?: unknown };
+      return {
+        ...p,
+        videoUrls: Array.isArray(raw.videoUrls)
+          ? raw.videoUrls.filter((u): u is string => typeof u === "string")
+          : [],
+        tag: typeof raw.tag === "string" && VALID_TAGS.includes(raw.tag as (typeof VALID_TAGS)[number])
+          ? raw.tag
+          : "Voc.",
+      };
+    });
 }
 
-async function getPost(slug: string): Promise<BlogPost | null> {
+async function getPost(slug: string): Promise<MusicPost | null> {
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
@@ -52,25 +70,30 @@ function formatDate(iso: string): string {
   }
 }
 
-export default async function BlogPostPage({
+export default async function MusicPostPage({
   params,
 }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const [post, admin] = await Promise.all([getPost(slug), isAdmin()]);
   if (!post) notFound();
 
+  const mediaItems: { type: "image" | "video"; url: string }[] = [
+    ...post.imageUrls.map((url) => ({ type: "image" as const, url })),
+    ...(post.videoUrls ?? []).map((url) => ({ type: "video" as const, url })),
+  ];
+
   return (
     <article className="space-y-8">
       <div className="flex items-center justify-between gap-4">
         <Link
-          href="/blog"
+          href="/music"
           className="text-sm text-zinc-600 hover:underline dark:text-zinc-400"
         >
-          ← Blog
+          ← Music
         </Link>
         {admin && (
           <Link
-            href={`/admin/blog/edit?id=${encodeURIComponent(post.id)}`}
+            href={`/admin/music/edit?id=${encodeURIComponent(post.id)}`}
             className="text-xs text-zinc-600 underline hover:no-underline dark:text-zinc-400"
           >
             Edit post
@@ -78,6 +101,11 @@ export default async function BlogPostPage({
         )}
       </div>
       <header className="space-y-4">
+        <span
+          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${getTagStyles(post.tag)}`}
+        >
+          {post.tag}
+        </span>
         <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 md:text-4xl">
           {post.title}
         </h1>
@@ -88,22 +116,10 @@ export default async function BlogPostPage({
           {formatDate(post.createdAt)}
         </time>
       </header>
-      {post.imageUrls.length > 0 && (
+      {mediaItems.length > 0 && (
         <div className="space-y-4">
-          {post.imageUrls.map((url, i) => (
-            <div
-              key={i}
-              className="relative aspect-video w-full overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800"
-            >
-              <Image
-                src={url}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="(max-width: 768px) 100vw, 42rem"
-                unoptimized
-              />
-            </div>
+          {mediaItems.map((item, i) => (
+            <HoverPlayMedia key={i} type={item.type} url={item.url} />
           ))}
         </div>
       )}

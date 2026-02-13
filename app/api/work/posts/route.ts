@@ -2,32 +2,52 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 
-const KEY = "blog:posts";
+const KEY = "work:posts";
 const hasKvEnv =
   !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
 
-export type BlogPost = {
+export type WorkPost = {
   id: string;
   slug: string;
   title: string;
   content: string;
   imageUrls: string[];
+  videoUrls: string[];
+  audioUrls: string[];
+  pdfUrls: string[];
+  zipUrls: string[];
   createdAt: string;
 };
 
-function parsePosts(data: unknown): BlogPost[] {
+function parsePosts(data: unknown): WorkPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is WorkPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as WorkPost).id === "string" &&
+        typeof (p as WorkPost).slug === "string" &&
+        typeof (p as WorkPost).title === "string" &&
+        typeof (p as WorkPost).content === "string" &&
+        Array.isArray((p as WorkPost).imageUrls) &&
+        typeof (p as WorkPost).createdAt === "string"
+    )
+    .map((p) => ({
+      ...p,
+      videoUrls: Array.isArray((p as WorkPost).videoUrls)
+        ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
+        : [],
+      audioUrls: Array.isArray((p as WorkPost).audioUrls)
+        ? (p as WorkPost).audioUrls.filter((u): u is string => typeof u === "string")
+        : [],
+      pdfUrls: Array.isArray((p as WorkPost).pdfUrls)
+        ? (p as WorkPost).pdfUrls.filter((u): u is string => typeof u === "string")
+        : [],
+      zipUrls: Array.isArray((p as WorkPost).zipUrls)
+        ? (p as WorkPost).zipUrls.filter((u): u is string => typeof u === "string")
+        : [],
+    }));
 }
 
 export async function GET() {
@@ -72,6 +92,18 @@ export async function POST(request: NextRequest) {
   const imageUrls = Array.isArray(body.imageUrls)
     ? body.imageUrls.filter((u: unknown) => typeof u === "string")
     : [];
+  const videoUrls = Array.isArray(body.videoUrls)
+    ? body.videoUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const audioUrls = Array.isArray(body.audioUrls)
+    ? body.audioUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const pdfUrls = Array.isArray(body.pdfUrls)
+    ? body.pdfUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const zipUrls = Array.isArray(body.zipUrls)
+    ? body.zipUrls.filter((u: unknown) => typeof u === "string")
+    : [];
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
@@ -81,7 +113,7 @@ export async function POST(request: NextRequest) {
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const createdAt = new Date().toISOString();
-  const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
+  const post: WorkPost = { id, slug, title, content, imageUrls, videoUrls, audioUrls, pdfUrls, zipUrls, createdAt };
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
@@ -119,6 +151,18 @@ export async function PUT(request: NextRequest) {
   const imageUrls = Array.isArray(body.imageUrls)
     ? body.imageUrls.filter((u: unknown) => typeof u === "string")
     : [];
+  const videoUrls = Array.isArray(body.videoUrls)
+    ? body.videoUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const audioUrls = Array.isArray(body.audioUrls)
+    ? body.audioUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const pdfUrls = Array.isArray(body.pdfUrls)
+    ? body.pdfUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const zipUrls = Array.isArray(body.zipUrls)
+    ? body.zipUrls.filter((u: unknown) => typeof u === "string")
+    : [];
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
@@ -139,6 +183,10 @@ export async function PUT(request: NextRequest) {
       content,
       slug,
       imageUrls,
+      videoUrls,
+      audioUrls,
+      pdfUrls,
+      zipUrls,
     };
     await kv.set(KEY, posts);
     return NextResponse.json({ post: posts[idx] });

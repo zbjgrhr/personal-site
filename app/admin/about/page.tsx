@@ -52,7 +52,10 @@ export default function AdminAboutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      if (!saveRes.ok) throw new Error("Failed to save");
+      if (!saveRes.ok) {
+        const d = await saveRes.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to save");
+      }
       setSaved(true);
       router.refresh();
     } catch (err) {

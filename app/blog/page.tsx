@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { kv } from "@vercel/kv";
+import { isAdmin } from "@/lib/auth";
 
 const KEY = "blog:posts";
 
@@ -52,13 +53,23 @@ function formatDate(iso: string): string {
 }
 
 export default async function BlogPage() {
-  const posts = await getPosts();
+  const [posts, admin] = await Promise.all([getPosts(), isAdmin()]);
 
   return (
     <div className="space-y-8">
-      <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-        Blog
-      </h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          Blog
+        </h1>
+        {admin && (
+          <Link
+            href="/admin/blog/new"
+            className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            New post
+          </Link>
+        )}
+      </div>
       {posts.length === 0 ? (
         <p className="text-zinc-600 dark:text-zinc-400">
           No posts yet.

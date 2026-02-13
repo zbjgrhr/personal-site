@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import MainWithSnap from "./MainWithSnap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +49,12 @@ export default function RootLayout({
                   About me
                 </Link>
                 <Link
+                  href="/cv"
+                  className="transition hover:text-zinc-900 hover:underline dark:hover:text-zinc-50"
+                >
+                  Curriculum Vitae
+                </Link>
+                <Link
                   href="/work"
                   className="transition hover:text-zinc-900 hover:underline dark:hover:text-zinc-50"
                 >
@@ -74,7 +81,7 @@ export default function RootLayout({
               </nav>
             </div>
           </header>
-          <main className="mx-auto max-w-3xl px-4 py-8">{children}</main>
+          <MainWithSnap>{children}</MainWithSnap>
         </div>
       </body>
     </html>

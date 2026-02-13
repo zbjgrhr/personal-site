@@ -1,40 +1,37 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal site
 
-## Getting Started
+Next.js app for my personal website, including:
 
-First, run the development server:
+- **About page** with optional profile photo (stored in **Vercel Blob**, URL stored in **Vercel KV**).
+- **Blog module** with posts (text + emoji + images) stored in **Vercel KV**.
+- **Admin-only** upload/edit after logging in with a simple password (cookie-based session).
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Admin
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Login**: `http://localhost:3000/admin/login`
+- **Admin home**: `http://localhost:3000/admin`
 
-## Learn More
+From the admin pages you can:
 
-To learn more about Next.js, take a look at the following resources:
+- Upload and set the About photo.
+- Create/edit/delete Blog posts (with multiple images).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Create `.env.local` in the project root and set:
 
-## Deploy on Vercel
+- **ADMIN_SECRET**: admin password used for login and API auth
+- **BLOB_READ_WRITE_TOKEN**: Vercel Blob read/write token (needed for local uploads)
+- **KV_REST_API_URL**: Vercel KV REST API URL
+- **KV_REST_API_TOKEN**: Vercel KV REST API token
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-=======
-# personal-site
->>>>>>> 5fcf239a3638c359678548137b028035beb5c6ac
+On Vercel, enable **Storage → Blob** and **Storage → KV** for the project and add the generated env vars in the project settings.

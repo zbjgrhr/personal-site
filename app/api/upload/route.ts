@@ -7,6 +7,15 @@ export async function POST(request: NextRequest) {
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return NextResponse.json(
+      {
+        error:
+          "Blob storage is not configured. Please set BLOB_READ_WRITE_TOKEN (see docs/env.md).",
+      },
+      { status: 503 }
+    );
+  }
   const formData = await request.formData();
   const file = formData.get("file");
   if (!file || !(file instanceof Blob)) {
@@ -14,7 +23,10 @@ export async function POST(request: NextRequest) {
   }
   const name = (file as File).name || `upload-${Date.now()}`;
   try {
-    const blob = await put(name, file, { access: "public" });
+    const blob = await put(name, file, {
+      access: "public",
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
     return NextResponse.json({ url: blob.url });
   } catch (err) {
     console.error("Upload error:", err);

@@ -1,33 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
 
-const KEY = "blog:posts";
+const KEY = "music:posts";
 const hasKvEnv =
   !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
 
-export type BlogPost = {
+function isValidTag(t: unknown): t is MusicTag {
+  return typeof t === "string" && MUSIC_TAGS.includes(t as MusicTag);
+}
+
+export type MusicPost = {
   id: string;
   slug: string;
   title: string;
   content: string;
   imageUrls: string[];
+  videoUrls: string[];
+  tag: MusicTag;
   createdAt: string;
 };
 
-function parsePosts(data: unknown): BlogPost[] {
+function parsePosts(data: unknown): MusicPost[] {
   if (!Array.isArray(data)) return [];
   return data.filter(
-    (p): p is BlogPost =>
+    (p): p is MusicPost =>
       p &&
       typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+      typeof (p as MusicPost).id === "string" &&
+      typeof (p as MusicPost).slug === "string" &&
+      typeof (p as MusicPost).title === "string" &&
+      typeof (p as MusicPost).content === "string" &&
+      Array.isArray((p as MusicPost).imageUrls) &&
+      typeof (p as MusicPost).createdAt === "string"
+  ).map((p) => {
+    const raw = p as MusicPost & { tag?: unknown };
+    return {
+      ...p,
+      videoUrls: Array.isArray(raw.videoUrls)
+        ? raw.videoUrls.filter((u): u is string => typeof u === "string")
+        : [],
+      tag: isValidTag(raw.tag) ? raw.tag : "Voc.",
+    };
+  });
 }
 
 export async function GET() {
@@ -72,6 +88,10 @@ export async function POST(request: NextRequest) {
   const imageUrls = Array.isArray(body.imageUrls)
     ? body.imageUrls.filter((u: unknown) => typeof u === "string")
     : [];
+  const videoUrls = Array.isArray(body.videoUrls)
+    ? body.videoUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const tag = isValidTag(body.tag) ? body.tag : "Voc.";
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
@@ -81,7 +101,7 @@ export async function POST(request: NextRequest) {
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const createdAt = new Date().toISOString();
-  const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
+  const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
@@ -119,6 +139,10 @@ export async function PUT(request: NextRequest) {
   const imageUrls = Array.isArray(body.imageUrls)
     ? body.imageUrls.filter((u: unknown) => typeof u === "string")
     : [];
+  const videoUrls = Array.isArray(body.videoUrls)
+    ? body.videoUrls.filter((u: unknown) => typeof u === "string")
+    : [];
+  const tag = isValidTag(body.tag) ? body.tag : "Voc.";
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
@@ -139,6 +163,8 @@ export async function PUT(request: NextRequest) {
       content,
       slug,
       imageUrls,
+      videoUrls,
+      tag,
     };
     await kv.set(KEY, posts);
     return NextResponse.json({ post: posts[idx] });

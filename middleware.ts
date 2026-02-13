@@ -1,40 +1,48 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createHmac } from "crypto";
 
 const COOKIE_NAME = "admin_session";
 const SALT = "admin";
 
-function getSessionToken(): string {
+async function getSessionToken(): Promise<string> {
   const secret = process.env.ADMIN_SECRET;
   if (!secret) return "";
-  return createHmac("sha256", secret).update(SALT).digest("hex");
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const data = encoder.encode(SALT);
+  const signature = await crypto.subtle.sign("HMAC", key, data);
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export function middleware(request: NextRequest) {
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const encoder = new TextEncoder();
+  const au = encoder.encode(a);
+  const bu = encoder.encode(b);
+  let out = 0;
+  for (let i = 0; i < au.length; i++) out |= au[i] ^ bu[i];
+  return out === 0;
+}
+
+export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (path === "/admin/login" || path.startsWith("/api/")) {
     return NextResponse.next();
   }
   if (path.startsWith("/admin")) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
-    const expected = getSessionToken();
+    const expected = await getSessionToken();
     const valid =
-      expected &&
-      token &&
-      token.length === expected.length &&
-      (() => {
-        try {
-          const a = Buffer.from(token, "utf8");
-          const b = Buffer.from(expected, "utf8");
-          if (a.length !== b.length) return false;
-          let out = 0;
-          for (let i = 0; i < a.length; i++) out |= a[i] ^ b[i];
-          return out === 0;
-        } catch {
-          return false;
-        }
-      })();
+      expected && token && constantTimeEqual(token, expected);
     if (!valid) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
