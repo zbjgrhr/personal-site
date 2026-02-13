@@ -23,10 +23,22 @@ export type MusicPostSummary = {
   createdAt: string;
 };
 
+export type WorkPostSummary = {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  imageUrls: string[];
+  videoUrls: string[];
+  audioUrls: string[];
+  createdAt: string;
+};
+
 type Props = {
   aboutPhotoUrl: string | null;
   blogPosts: BlogPostSummary[];
   musicPosts: MusicPostSummary[];
+  workPosts: WorkPostSummary[];
 };
 
 function formatDate(iso: string): string {
@@ -45,6 +57,7 @@ export function HomeSections({
   aboutPhotoUrl,
   blogPosts,
   musicPosts,
+  workPosts,
 }: Props) {
   const sectionRefs = useRef<(HTMLElement | null)[]>([]);
   const currentIndexRef = useRef(0);
@@ -149,25 +162,71 @@ export function HomeSections({
         ref={(el) => setRef(1, el)}
         className="flex min-h-screen snap-start flex-col justify-center py-12"
       >
-        <article className="space-y-6">
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Works
-          </h1>
-          <p className="text-lg leading-relaxed text-zinc-700 dark:text-zinc-300">
-            This page will collect selected projects, experiments, and
-            collaborations.
-          </p>
-          <p className="text-lg leading-relaxed text-zinc-700 dark:text-zinc-300">
-            You can later replace this text with a list of works, case studies,
-            or anything else you want to highlight.
-          </p>
-          <Link
-            href="/work"
-            className="text-zinc-600 underline hover:no-underline dark:text-zinc-400"
-          >
-            View Works →
-          </Link>
-        </article>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Works
+            </h1>
+            <Link
+              href="/work"
+              className="text-zinc-600 underline hover:no-underline dark:text-zinc-400"
+            >
+              View Works →
+            </Link>
+          </div>
+          {workPosts.length === 0 ? (
+            <p className="text-zinc-600 dark:text-zinc-400">No works yet.</p>
+          ) : (
+            <ul className="space-y-4">
+              {workPosts.slice(0, 5).map((post) => (
+                <li key={post.id}>
+                  <Link
+                    href={`/work/${post.slug}`}
+                    className="group block overflow-hidden rounded-lg border border-zinc-200 bg-white transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-zinc-700"
+                  >
+                    {(post.imageUrls[0] || post.videoUrls[0]) && (
+                      <div className="relative aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                        {post.imageUrls[0] ? (
+                          <Image
+                            src={post.imageUrls[0]}
+                            alt=""
+                            fill
+                            className="object-cover transition group-hover:scale-[1.02]"
+                            sizes="(max-width: 768px) 100vw, 42rem"
+                            unoptimized
+                          />
+                        ) : (
+                          <video
+                            src={post.videoUrls[0]}
+                            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                            muted
+                            preload="metadata"
+                            playsInline
+                          />
+                        )}
+                      </div>
+                    )}
+                    <div className="p-4">
+                      <h2 className="font-semibold text-zinc-900 group-hover:underline dark:text-zinc-50">
+                        {post.title}
+                      </h2>
+                      <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
+                        {post.content.slice(0, 160)}
+                        {post.content.length > 160 ? "…" : ""}
+                      </p>
+                      <time
+                        dateTime={post.createdAt}
+                        className="mt-2 block text-xs text-zinc-500 dark:text-zinc-500"
+                      >
+                        {formatDate(post.createdAt)}
+                      </time>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       {/* Blog */}

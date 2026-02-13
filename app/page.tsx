@@ -1,5 +1,10 @@
 import { kv } from "@vercel/kv";
-import { HomeSections, type BlogPostSummary, type MusicPostSummary } from "./HomeSections";
+import {
+  HomeSections,
+  type BlogPostSummary,
+  type MusicPostSummary,
+  type WorkPostSummary,
+} from "./HomeSections";
 
 async function getAboutPhotoUrl(): Promise<string | null> {
   try {
@@ -47,6 +52,45 @@ function parseMusicPosts(data: unknown): MusicPostSummary[] {
     }));
 }
 
+function parseWorkPosts(data: unknown): WorkPostSummary[] {
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter(
+      (p): p is WorkPostSummary =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as WorkPostSummary).id === "string" &&
+        typeof (p as WorkPostSummary).slug === "string" &&
+        typeof (p as WorkPostSummary).title === "string" &&
+        typeof (p as WorkPostSummary).content === "string" &&
+        Array.isArray((p as WorkPostSummary).imageUrls) &&
+        typeof (p as WorkPostSummary).createdAt === "string"
+    )
+    .map((p) => {
+      const raw = p as WorkPostSummary & { videoUrls?: unknown; audioUrls?: unknown };
+      return {
+        ...p,
+        videoUrls: Array.isArray(raw.videoUrls)
+          ? raw.videoUrls.filter((u): u is string => typeof u === "string")
+          : [],
+        audioUrls: Array.isArray(raw.audioUrls)
+          ? raw.audioUrls.filter((u): u is string => typeof u === "string")
+          : [],
+      };
+    });
+}
+
+async function getWorkPosts(): Promise<WorkPostSummary[]> {
+  try {
+    const data = await kv.get<unknown>("work:posts");
+    const posts = parseWorkPosts(data ?? []);
+    posts.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    return posts;
+  } catch {
+    return [];
+  }
+}
+
 async function getBlogPosts(): Promise<BlogPostSummary[]> {
   try {
     const data = await kv.get<unknown>("blog:posts");
@@ -70,10 +114,11 @@ async function getMusicPosts(): Promise<MusicPostSummary[]> {
 }
 
 export default async function Home() {
-  const [aboutPhotoUrl, blogPosts, musicPosts] = await Promise.all([
+  const [aboutPhotoUrl, blogPosts, musicPosts, workPosts] = await Promise.all([
     getAboutPhotoUrl(),
     getBlogPosts(),
     getMusicPosts(),
+    getWorkPosts(),
   ]);
 
   return (
@@ -81,6 +126,7 @@ export default async function Home() {
       aboutPhotoUrl={aboutPhotoUrl}
       blogPosts={blogPosts}
       musicPosts={musicPosts}
+      workPosts={workPosts}
     />
   );
 }
