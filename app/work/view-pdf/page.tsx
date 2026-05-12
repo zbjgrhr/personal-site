@@ -1,10 +1,17 @@
 import Link from "next/link";
 
+function isTrustedBlobHost(hostname: string): boolean {
+  return (
+    hostname === "public.blob.vercel-storage.com" ||
+    hostname.endsWith(".public.blob.vercel-storage.com")
+  );
+}
+
 function isValidPdfUrl(url: string | null): boolean {
   if (!url || typeof url !== "string") return false;
   try {
     const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
+    return u.protocol === "https:" && isTrustedBlobHost(u.hostname);
   } catch {
     return false;
   }
