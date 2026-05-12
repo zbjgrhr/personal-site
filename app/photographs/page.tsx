@@ -4,6 +4,8 @@ import { PhotographsGrid, type MediaItem } from "./PhotographsGrid";
 const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
 const ABOUT_PHOTO_KEY = "about:photo_url";
+const hasKvEnv =
+  !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
 
 type BlogPost = {
   id: string;
@@ -62,11 +64,21 @@ function parseMusicPosts(data: unknown): MusicPost[] {
 }
 
 async function getAllMedia(): Promise<MediaItem[]> {
-  const [blogData, musicData, aboutUrl] = await Promise.all([
-    kv.get<unknown>(BLOG_KEY),
-    kv.get<unknown>(MUSIC_KEY),
-    kv.get<string>(ABOUT_PHOTO_KEY),
-  ]);
+  if (!hasKvEnv) return [];
+
+  let blogData: unknown;
+  let musicData: unknown;
+  let aboutUrl: string | null = null;
+
+  try {
+    [blogData, musicData, aboutUrl] = await Promise.all([
+      kv.get<unknown>(BLOG_KEY),
+      kv.get<unknown>(MUSIC_KEY),
+      kv.get<string>(ABOUT_PHOTO_KEY),
+    ]);
+  } catch {
+    return [];
+  }
 
   const items: MediaItem[] = [];
   const now = new Date().toISOString();
