@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
+import { KvMutationLockError, withKvMutationLock } from "@/lib/kvMutationLock";
 
 const KEY = "music:posts";
 const hasKvEnv =
@@ -103,12 +104,20 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    await withKvMutationLock(KEY, async () => {
+      const data = await kv.get<unknown>(KEY);
+      const posts = parsePosts(data ?? []);
+      posts.unshift(post);
+      await kv.set(KEY, posts);
+    });
     return NextResponse.json({ post });
   } catch (err) {
+    if (err instanceof KvMutationLockError) {
+      return NextResponse.json(
+        { error: "Another save is in progress. Please try again." },
+        { status: 409 }
+      );
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -151,24 +160,34 @@ export async function PUT(request: NextRequest) {
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
+    const post = await withKvMutationLock(KEY, async () => {
+      const data = await kv.get<unknown>(KEY);
+      const posts = parsePosts(data ?? []);
+      const idx = posts.findIndex((p) => p.id === id);
+      if (idx === -1) return null;
+      posts[idx] = {
+        ...posts[idx],
+        title,
+        content,
+        slug,
+        imageUrls,
+        videoUrls,
+        tag,
+      };
+      await kv.set(KEY, posts);
+      return posts[idx];
+    });
+    if (!post) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-      videoUrls,
-      tag,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    return NextResponse.json({ post });
   } catch (err) {
+    if (err instanceof KvMutationLockError) {
+      return NextResponse.json(
+        { error: "Another save is in progress. Please try again." },
+        { status: 409 }
+      );
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -194,11 +213,19 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await withKvMutationLock(KEY, async () => {
+      const data = await kv.get<unknown>(KEY);
+      const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
+      await kv.set(KEY, posts);
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof KvMutationLockError) {
+      return NextResponse.json(
+        { error: "Another save is in progress. Please try again." },
+        { status: 409 }
+      );
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
   }
