@@ -1,8 +1,10 @@
 import { kv } from "@vercel/kv";
+import { normalizePostSlug } from "@/lib/postSlugs";
 import { PhotographsGrid, type MediaItem } from "./PhotographsGrid";
 
 const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
+const WORK_KEY = "work:posts";
 const ABOUT_PHOTO_KEY = "about:photo_url";
 
 type BlogPost = {
@@ -24,19 +26,31 @@ type MusicPost = {
   createdAt: string;
 };
 
+type WorkPost = {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  imageUrls: string[];
+  videoUrls: string[];
+  createdAt: string;
+};
+
 function parseBlogPosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is BlogPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as BlogPost).id === "string" &&
+        typeof (p as BlogPost).slug === "string" &&
+        typeof (p as BlogPost).title === "string" &&
+        typeof (p as BlogPost).content === "string" &&
+        Array.isArray((p as BlogPost).imageUrls) &&
+        typeof (p as BlogPost).createdAt === "string"
+    )
+    .map((p) => ({ ...p, slug: normalizePostSlug(p) }));
 }
 
 function parseMusicPosts(data: unknown): MusicPost[] {
@@ -55,18 +69,52 @@ function parseMusicPosts(data: unknown): MusicPost[] {
     )
     .map((p) => ({
       ...p,
+      slug: normalizePostSlug(p),
       videoUrls: Array.isArray((p as MusicPost).videoUrls)
         ? (p as MusicPost).videoUrls.filter((u): u is string => typeof u === "string")
         : [],
     }));
 }
 
+function parseWorkPosts(data: unknown): WorkPost[] {
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter(
+      (p): p is WorkPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as WorkPost).id === "string" &&
+        typeof (p as WorkPost).slug === "string" &&
+        typeof (p as WorkPost).title === "string" &&
+        typeof (p as WorkPost).content === "string" &&
+        Array.isArray((p as WorkPost).imageUrls) &&
+        typeof (p as WorkPost).createdAt === "string"
+    )
+    .map((p) => ({
+      ...p,
+      slug: normalizePostSlug(p),
+      videoUrls: Array.isArray((p as WorkPost).videoUrls)
+        ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
+        : [],
+    }));
+}
+
 async function getAllMedia(): Promise<MediaItem[]> {
-  const [blogData, musicData, aboutUrl] = await Promise.all([
-    kv.get<unknown>(BLOG_KEY),
-    kv.get<unknown>(MUSIC_KEY),
-    kv.get<string>(ABOUT_PHOTO_KEY),
-  ]);
+  let blogData: unknown;
+  let musicData: unknown;
+  let workData: unknown;
+  let aboutUrl: string | null = null;
+
+  try {
+    [blogData, musicData, workData, aboutUrl] = await Promise.all([
+      kv.get<unknown>(BLOG_KEY),
+      kv.get<unknown>(MUSIC_KEY),
+      kv.get<unknown>(WORK_KEY),
+      kv.get<string>(ABOUT_PHOTO_KEY),
+    ]);
+  } catch {
+    return [];
+  }
 
   const items: MediaItem[] = [];
   const now = new Date().toISOString();
@@ -114,6 +162,36 @@ async function getAllMedia(): Promise<MediaItem[]> {
         createdAt: post.createdAt ?? now,
         title: post.title,
         link: `/music/${post.slug}`,
+      });
+    }
+  }
+
+  const workPosts = parseWorkPosts(workData ?? []);
+  for (const post of workPosts) {
+    const imageUrls = post.imageUrls ?? [];
+    const videoUrls = post.videoUrls ?? [];
+    for (let i = 0; i < imageUrls.length; i++) {
+      if (typeof imageUrls[i] !== "string") continue;
+      items.push({
+        id: `work-${post.id}-img-${i}`,
+        type: "image",
+        url: imageUrls[i],
+        source: "work",
+        createdAt: post.createdAt ?? now,
+        title: post.title,
+        link: `/work/${post.slug}`,
+      });
+    }
+    for (let i = 0; i < videoUrls.length; i++) {
+      if (typeof videoUrls[i] !== "string") continue;
+      items.push({
+        id: `work-${post.id}-vid-${i}`,
+        type: "video",
+        url: videoUrls[i],
+        source: "work",
+        createdAt: post.createdAt ?? now,
+        title: post.title,
+        link: `/work/${post.slug}`,
       });
     }
   }
