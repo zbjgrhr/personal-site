@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { AdminWorkList } from "./AdminWorkList";
+import { normalizePostSlug } from "@/lib/postSlugs";
 
 const KEY = "work:posts";
 
@@ -33,6 +34,7 @@ function parsePosts(data: unknown): WorkPost[] {
     )
     .map((p) => ({
       ...p,
+      slug: normalizePostSlug(p),
       videoUrls: Array.isArray((p as WorkPost).videoUrls)
         ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
         : [],

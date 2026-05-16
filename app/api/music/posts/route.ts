@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
+import { createPostSlug, normalizePostSlug } from "@/lib/postSlugs";
 
 const KEY = "music:posts";
 const hasKvEnv =
@@ -38,6 +39,7 @@ function parsePosts(data: unknown): MusicPost[] {
     const raw = p as MusicPost & { tag?: unknown };
     return {
       ...p,
+      slug: normalizePostSlug(p),
       videoUrls: Array.isArray(raw.videoUrls)
         ? raw.videoUrls.filter((u): u is string => typeof u === "string")
         : [],
@@ -64,7 +66,10 @@ export async function GET() {
     return NextResponse.json({ posts });
   } catch (err) {
     console.error("KV get error:", err);
-    return NextResponse.json({ posts: [] });
+    return NextResponse.json(
+      { error: "Failed to load posts" },
+      { status: 503 }
+    );
   }
 }
 
@@ -95,11 +100,10 @@ export async function POST(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const slugSource =
+    typeof body.slug === "string" && body.slug.trim() ? body.slug : title;
+  const slug = createPostSlug(slugSource, id);
   const createdAt = new Date().toISOString();
   const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
   try {
@@ -146,10 +150,9 @@ export async function PUT(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const slugSource =
+    typeof body.slug === "string" && body.slug.trim() ? body.slug : title;
+  const slug = createPostSlug(slugSource, id);
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);

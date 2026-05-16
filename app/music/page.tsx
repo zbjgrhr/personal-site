@@ -3,6 +3,7 @@ import Image from "next/image";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { getTagStyles } from "@/lib/musicTags";
+import { normalizePostSlug } from "@/lib/postSlugs";
 
 const KEY = "music:posts";
 
@@ -37,6 +38,7 @@ function parsePosts(data: unknown): MusicPost[] {
       const raw = p as MusicPost & { tag?: unknown };
       return {
         ...p,
+        slug: normalizePostSlug(p),
         videoUrls: Array.isArray(raw.videoUrls)
           ? raw.videoUrls.filter((u): u is string => typeof u === "string")
           : [],
