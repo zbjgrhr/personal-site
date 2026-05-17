@@ -3,6 +3,7 @@ import Image from "next/image";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { Playfair_Display } from "next/font/google";
+import { normalizePostSlug } from "@/lib/slugs";
 
 const playfair = Playfair_Display({
   subsets: ["latin"],
@@ -39,6 +40,7 @@ function parsePosts(data: unknown): WorkPost[] {
     )
     .map((p) => ({
       ...p,
+      slug: normalizePostSlug(p.slug, p.id),
       videoUrls: Array.isArray((p as WorkPost).videoUrls)
         ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
         : [],

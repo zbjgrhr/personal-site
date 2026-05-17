@@ -5,6 +5,7 @@ import {
   type MusicPostSummary,
   type WorkPostSummary,
 } from "./HomeSections";
+import { normalizePostSlug } from "@/lib/slugs";
 
 async function getAboutPhotoUrl(): Promise<string | null> {
   try {
@@ -17,17 +18,19 @@ async function getAboutPhotoUrl(): Promise<string | null> {
 
 function parseBlogPosts(data: unknown): BlogPostSummary[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPostSummary =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPostSummary).id === "string" &&
-      typeof (p as BlogPostSummary).slug === "string" &&
-      typeof (p as BlogPostSummary).title === "string" &&
-      typeof (p as BlogPostSummary).content === "string" &&
-      Array.isArray((p as BlogPostSummary).imageUrls) &&
-      typeof (p as BlogPostSummary).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is BlogPostSummary =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as BlogPostSummary).id === "string" &&
+        typeof (p as BlogPostSummary).slug === "string" &&
+        typeof (p as BlogPostSummary).title === "string" &&
+        typeof (p as BlogPostSummary).content === "string" &&
+        Array.isArray((p as BlogPostSummary).imageUrls) &&
+        typeof (p as BlogPostSummary).createdAt === "string"
+    )
+    .map((p) => ({ ...p, slug: normalizePostSlug(p.slug, p.id) }));
 }
 
 function parseMusicPosts(data: unknown): MusicPostSummary[] {
@@ -46,6 +49,7 @@ function parseMusicPosts(data: unknown): MusicPostSummary[] {
     )
     .map((p) => ({
       ...p,
+      slug: normalizePostSlug(p.slug, p.id),
       videoUrls: Array.isArray((p as MusicPostSummary).videoUrls)
         ? (p as MusicPostSummary).videoUrls.filter((u): u is string => typeof u === "string")
         : [],
@@ -70,6 +74,7 @@ function parseWorkPosts(data: unknown): WorkPostSummary[] {
       const raw = p as WorkPostSummary & { videoUrls?: unknown; audioUrls?: unknown };
       return {
         ...p,
+        slug: normalizePostSlug(p.slug, p.id),
         videoUrls: Array.isArray(raw.videoUrls)
           ? raw.videoUrls.filter((u): u is string => typeof u === "string")
           : [],

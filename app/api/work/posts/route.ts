@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { makePostSlug, normalizePostSlug } from "@/lib/slugs";
 
 const KEY = "work:posts";
 const hasKvEnv =
@@ -35,6 +36,7 @@ function parsePosts(data: unknown): WorkPost[] {
     )
     .map((p) => ({
       ...p,
+      slug: normalizePostSlug(p.slug, p.id),
       videoUrls: Array.isArray((p as WorkPost).videoUrls)
         ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
         : [],
@@ -107,11 +109,8 @@ export async function POST(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const slug = makePostSlug(body.slug, title, id);
   const createdAt = new Date().toISOString();
   const post: WorkPost = { id, slug, title, content, imageUrls, videoUrls, audioUrls, pdfUrls, zipUrls, createdAt };
   try {
@@ -166,10 +165,7 @@ export async function PUT(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const slug = makePostSlug(body.slug, title, id);
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);

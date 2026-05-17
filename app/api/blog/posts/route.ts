@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { makePostSlug, normalizePostSlug } from "@/lib/slugs";
 
 const KEY = "blog:posts";
 const hasKvEnv =
@@ -17,17 +18,19 @@ export type BlogPost = {
 
 function parsePosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is BlogPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as BlogPost).id === "string" &&
+        typeof (p as BlogPost).slug === "string" &&
+        typeof (p as BlogPost).title === "string" &&
+        typeof (p as BlogPost).content === "string" &&
+        Array.isArray((p as BlogPost).imageUrls) &&
+        typeof (p as BlogPost).createdAt === "string"
+    )
+    .map((p) => ({ ...p, slug: normalizePostSlug(p.slug, p.id) }));
 }
 
 export async function GET() {
@@ -75,11 +78,8 @@ export async function POST(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const slug = makePostSlug(body.slug, title, id);
   const createdAt = new Date().toISOString();
   const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
   try {
@@ -122,10 +122,7 @@ export async function PUT(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const slug = makePostSlug(body.slug, title, id);
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
