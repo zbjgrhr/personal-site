@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { AdminBlogList } from "./AdminBlogList";
+import { normalizePostSlug } from "@/lib/slugs";
 
 const KEY = "blog:posts";
 
@@ -15,17 +16,19 @@ type BlogPost = {
 
 function parsePosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is BlogPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as BlogPost).id === "string" &&
+        typeof (p as BlogPost).slug === "string" &&
+        typeof (p as BlogPost).title === "string" &&
+        typeof (p as BlogPost).content === "string" &&
+        Array.isArray((p as BlogPost).imageUrls) &&
+        typeof (p as BlogPost).createdAt === "string"
+    )
+    .map((p) => ({ ...p, slug: normalizePostSlug(p.slug, p.id) }));
 }
 
 async function getPosts(): Promise<BlogPost[]> {

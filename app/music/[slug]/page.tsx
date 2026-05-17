@@ -4,6 +4,7 @@ import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { getTagStyles } from "@/lib/musicTags";
 import { HoverPlayMedia } from "../HoverPlayMedia";
+import { normalizePostSlug } from "@/lib/slugs";
 
 const KEY = "music:posts";
 
@@ -38,6 +39,7 @@ function parsePosts(data: unknown): MusicPost[] {
       const raw = p as MusicPost & { tag?: unknown };
       return {
         ...p,
+        slug: normalizePostSlug(p.slug, p.id),
         videoUrls: Array.isArray(raw.videoUrls)
           ? raw.videoUrls.filter((u): u is string => typeof u === "string")
           : [],

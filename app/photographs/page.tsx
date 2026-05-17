@@ -1,5 +1,6 @@
 import { kv } from "@vercel/kv";
 import { PhotographsGrid, type MediaItem } from "./PhotographsGrid";
+import { normalizePostSlug } from "@/lib/slugs";
 
 const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
@@ -26,17 +27,19 @@ type MusicPost = {
 
 function parseBlogPosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data
+    .filter(
+      (p): p is BlogPost =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as BlogPost).id === "string" &&
+        typeof (p as BlogPost).slug === "string" &&
+        typeof (p as BlogPost).title === "string" &&
+        typeof (p as BlogPost).content === "string" &&
+        Array.isArray((p as BlogPost).imageUrls) &&
+        typeof (p as BlogPost).createdAt === "string"
+    )
+    .map((p) => ({ ...p, slug: normalizePostSlug(p.slug, p.id) }));
 }
 
 function parseMusicPosts(data: unknown): MusicPost[] {
@@ -55,6 +58,7 @@ function parseMusicPosts(data: unknown): MusicPost[] {
     )
     .map((p) => ({
       ...p,
+      slug: normalizePostSlug(p.slug, p.id),
       videoUrls: Array.isArray((p as MusicPost).videoUrls)
         ? (p as MusicPost).videoUrls.filter((u): u is string => typeof u === "string")
         : [],
