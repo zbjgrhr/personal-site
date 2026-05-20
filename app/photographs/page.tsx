@@ -1,6 +1,8 @@
 import { kv } from "@vercel/kv";
 import { PhotographsGrid, type MediaItem } from "./PhotographsGrid";
 
+export const dynamic = "force-dynamic";
+
 const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
 const ABOUT_PHOTO_KEY = "about:photo_url";
