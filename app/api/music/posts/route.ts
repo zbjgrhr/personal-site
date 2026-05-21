@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
+import { slugForNewPost, slugForUpdatedPost } from "@/lib/contentSlugs";
 
 const KEY = "music:posts";
 const hasKvEnv =
@@ -95,16 +96,13 @@ export async function POST(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const createdAt = new Date().toISOString();
-  const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
+    const slug = slugForNewPost(title, posts, body.slug);
+    const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
     posts.unshift(post);
     await kv.set(KEY, posts);
     return NextResponse.json({ post });
@@ -146,10 +144,6 @@ export async function PUT(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
@@ -157,6 +151,7 @@ export async function PUT(request: NextRequest) {
     if (idx === -1) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
+    const slug = slugForUpdatedPost(posts[idx], posts, body.slug);
     posts[idx] = {
       ...posts[idx],
       title,
