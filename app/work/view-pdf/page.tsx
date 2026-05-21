@@ -1,11 +1,44 @@
 import Link from "next/link";
+import { kv } from "@vercel/kv";
 
-function isValidPdfUrl(url: string | null): boolean {
-  if (!url || typeof url !== "string") return false;
+const KEY = "work:posts";
+const hasKvEnv =
+  !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+
+type WorkPostWithPdfs = {
+  pdfUrls?: unknown;
+};
+
+function isHttpsUrl(url: string | null): url is string {
+  if (!url) return false;
   try {
     const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
+    return u.protocol === "https:";
   } catch {
+    return false;
+  }
+}
+
+function getStoredPdfUrls(data: unknown): Set<string> {
+  if (!Array.isArray(data)) return new Set();
+
+  const urls = data.flatMap((post: WorkPostWithPdfs) =>
+    Array.isArray(post.pdfUrls)
+      ? post.pdfUrls.filter((url): url is string => typeof url === "string")
+      : []
+  );
+
+  return new Set(urls);
+}
+
+async function isAllowedPdfUrl(url: string | null): Promise<boolean> {
+  if (!isHttpsUrl(url) || !hasKvEnv) return false;
+
+  try {
+    const data = await kv.get<unknown>(KEY);
+    return getStoredPdfUrls(data).has(url);
+  } catch (err) {
+    console.error("KV get error:", err);
     return false;
   }
 }
@@ -14,7 +47,7 @@ export default async function ViewPdfPage({
   searchParams,
 }: { searchParams: Promise<{ url?: string }> }) {
   const { url } = await searchParams;
-  const valid = isValidPdfUrl(url ?? null);
+  const valid = await isAllowedPdfUrl(url ?? null);
 
   return (
     <article className="flex min-h-[80vh] flex-col">
