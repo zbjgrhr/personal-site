@@ -2,6 +2,8 @@ import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { AdminBlogList } from "./AdminBlogList";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "blog:posts";
 
 type BlogPost = {

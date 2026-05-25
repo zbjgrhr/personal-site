@@ -2,6 +2,8 @@ import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { AdminWorkList } from "./AdminWorkList";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "work:posts";
 
 type WorkPost = {

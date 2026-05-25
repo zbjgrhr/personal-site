@@ -2,6 +2,8 @@ import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { AdminMusicList } from "./AdminMusicList";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "music:posts";
 
 type MusicPost = {
