@@ -4,6 +4,8 @@ import { AdminMusicList } from "./AdminMusicList";
 
 const KEY = "music:posts";
 
+export const dynamic = "force-dynamic";
+
 type MusicPost = {
   id: string;
   slug: string;

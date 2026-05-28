@@ -4,6 +4,8 @@ import { AdminWorkList } from "./AdminWorkList";
 
 const KEY = "work:posts";
 
+export const dynamic = "force-dynamic";
+
 type WorkPost = {
   id: string;
   slug: string;
