@@ -5,6 +5,8 @@ const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
 const ABOUT_PHOTO_KEY = "about:photo_url";
 
+export const dynamic = "force-dynamic";
+
 type BlogPost = {
   id: string;
   slug: string;
@@ -62,11 +64,20 @@ function parseMusicPosts(data: unknown): MusicPost[] {
 }
 
 async function getAllMedia(): Promise<MediaItem[]> {
-  const [blogData, musicData, aboutUrl] = await Promise.all([
-    kv.get<unknown>(BLOG_KEY),
-    kv.get<unknown>(MUSIC_KEY),
-    kv.get<string>(ABOUT_PHOTO_KEY),
-  ]);
+  let blogData: unknown;
+  let musicData: unknown;
+  let aboutUrl: string | null = null;
+
+  try {
+    [blogData, musicData, aboutUrl] = await Promise.all([
+      kv.get<unknown>(BLOG_KEY),
+      kv.get<unknown>(MUSIC_KEY),
+      kv.get<string>(ABOUT_PHOTO_KEY),
+    ]);
+  } catch (err) {
+    console.error("KV get error:", err);
+    return [];
+  }
 
   const items: MediaItem[] = [];
   const now = new Date().toISOString();
