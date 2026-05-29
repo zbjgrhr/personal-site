@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import {
+  ConcurrentPostWriteError,
+  InvalidPostStoreError,
+  deletePost,
+  insertPost,
+  updatePost,
+} from "@/lib/kvPostStore";
 
 const KEY = "blog:posts";
 const hasKvEnv =
@@ -28,6 +35,24 @@ function parsePosts(data: unknown): BlogPost[] {
       Array.isArray((p as BlogPost).imageUrls) &&
       typeof (p as BlogPost).createdAt === "string"
   );
+}
+
+function postStoreErrorResponse(err: unknown, action: string) {
+  if (err instanceof InvalidPostStoreError) {
+    return NextResponse.json(
+      { error: "Post storage is invalid; refusing to overwrite existing data." },
+      { status: 409 }
+    );
+  }
+  if (err instanceof ConcurrentPostWriteError) {
+    return NextResponse.json(
+      { error: "Post storage changed while saving. Please retry." },
+      { status: 409 }
+    );
+  }
+
+  console.error(`KV ${action} error:`, err);
+  return NextResponse.json({ error: `Failed to ${action}` }, { status: 500 });
 }
 
 export async function GET() {
@@ -83,14 +108,10 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post });
+    const savedPost = await insertPost(KEY, post);
+    return NextResponse.json({ post: savedPost });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+    return postStoreErrorResponse(err, "save");
   }
 }
 
@@ -126,25 +147,21 @@ export async function PUT(request: NextRequest) {
     typeof body.slug === "string" && body.slug.trim()
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const updates: Omit<BlogPost, "createdAt"> = {
+    id,
+    slug,
+    title,
+    content,
+    imageUrls,
+  };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
+    const post = await updatePost<BlogPost>(KEY, id, updates);
+    if (!post) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    return NextResponse.json({ post });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+    return postStoreErrorResponse(err, "save");
   }
 }
 
@@ -168,12 +185,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await deletePost(KEY, id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+    return postStoreErrorResponse(err, "delete");
   }
 }

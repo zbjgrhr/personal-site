@@ -4,6 +4,8 @@ import { AdminBlogList } from "./AdminBlogList";
 
 const KEY = "blog:posts";
 
+export const dynamic = "force-dynamic";
+
 type BlogPost = {
   id: string;
   slug: string;
