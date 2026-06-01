@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import {
+  deleteRawPostFromCollection,
+  getPostCollectionForWrite,
+  InvalidPostCollectionError,
+  updateRawPostCollection,
+} from "@/lib/postCollectionStore";
 
 const KEY = "work:posts";
 const hasKvEnv =
@@ -19,35 +25,58 @@ export type WorkPost = {
   createdAt: string;
 };
 
+type WorkPostRecord = Omit<
+  WorkPost,
+  "videoUrls" | "audioUrls" | "pdfUrls" | "zipUrls"
+> & {
+  videoUrls?: unknown;
+  audioUrls?: unknown;
+  pdfUrls?: unknown;
+  zipUrls?: unknown;
+};
+
+function isWorkPostRecord(p: unknown): p is WorkPostRecord {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    typeof (p as WorkPost).id === "string" &&
+    typeof (p as WorkPost).slug === "string" &&
+    typeof (p as WorkPost).title === "string" &&
+    typeof (p as WorkPost).content === "string" &&
+    Array.isArray((p as WorkPost).imageUrls) &&
+    typeof (p as WorkPost).createdAt === "string"
+  );
+}
+
+function normalizeWorkPost(p: WorkPostRecord): WorkPost {
+  return {
+    ...p,
+    videoUrls: Array.isArray(p.videoUrls)
+      ? p.videoUrls.filter((u): u is string => typeof u === "string")
+      : [],
+    audioUrls: Array.isArray(p.audioUrls)
+      ? p.audioUrls.filter((u): u is string => typeof u === "string")
+      : [],
+    pdfUrls: Array.isArray(p.pdfUrls)
+      ? p.pdfUrls.filter((u): u is string => typeof u === "string")
+      : [],
+    zipUrls: Array.isArray(p.zipUrls)
+      ? p.zipUrls.filter((u): u is string => typeof u === "string")
+      : [],
+  };
+}
+
 function parsePosts(data: unknown): WorkPost[] {
   if (!Array.isArray(data)) return [];
-  return data
-    .filter(
-      (p): p is WorkPost =>
-        p &&
-        typeof p === "object" &&
-        typeof (p as WorkPost).id === "string" &&
-        typeof (p as WorkPost).slug === "string" &&
-        typeof (p as WorkPost).title === "string" &&
-        typeof (p as WorkPost).content === "string" &&
-        Array.isArray((p as WorkPost).imageUrls) &&
-        typeof (p as WorkPost).createdAt === "string"
-    )
-    .map((p) => ({
-      ...p,
-      videoUrls: Array.isArray((p as WorkPost).videoUrls)
-        ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      audioUrls: Array.isArray((p as WorkPost).audioUrls)
-        ? (p as WorkPost).audioUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      pdfUrls: Array.isArray((p as WorkPost).pdfUrls)
-        ? (p as WorkPost).pdfUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      zipUrls: Array.isArray((p as WorkPost).zipUrls)
-        ? (p as WorkPost).zipUrls.filter((u): u is string => typeof u === "string")
-        : [],
-    }));
+  return data.filter(isWorkPostRecord).map(normalizeWorkPost);
+}
+
+function invalidCollectionResponse(err: InvalidPostCollectionError) {
+  console.error(err.message);
+  return NextResponse.json(
+    { error: "Stored posts data is invalid; refusing to overwrite it." },
+    { status: 500 }
+  );
 }
 
 export async function GET() {
@@ -116,11 +145,13 @@ export async function POST(request: NextRequest) {
   const post: WorkPost = { id, slug, title, content, imageUrls, videoUrls, audioUrls, pdfUrls, zipUrls, createdAt };
   try {
     const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    const rawPosts = getPostCollectionForWrite(data, KEY);
+    await kv.set(KEY, [post, ...rawPosts]);
     return NextResponse.json({ post });
   } catch (err) {
+    if (err instanceof InvalidPostCollectionError) {
+      return invalidCollectionResponse(err);
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -172,25 +203,32 @@ export async function PUT(request: NextRequest) {
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
     const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
+    const rawPosts = getPostCollectionForWrite(data, KEY);
+    const updated = updateRawPostCollection(
+      rawPosts,
+      isWorkPostRecord,
+      id,
+      (post) => ({
+        ...normalizeWorkPost(post),
+        title,
+        content,
+        slug,
+        imageUrls,
+        videoUrls,
+        audioUrls,
+        pdfUrls,
+        zipUrls,
+      })
+    );
+    if (!updated) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-      videoUrls,
-      audioUrls,
-      pdfUrls,
-      zipUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    await kv.set(KEY, updated.posts);
+    return NextResponse.json({ post: updated.post });
   } catch (err) {
+    if (err instanceof InvalidPostCollectionError) {
+      return invalidCollectionResponse(err);
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -217,10 +255,16 @@ export async function DELETE(request: NextRequest) {
   }
   try {
     const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    const rawPosts = getPostCollectionForWrite(data, KEY);
+    const deleted = deleteRawPostFromCollection(rawPosts, isWorkPostRecord, id);
+    if (deleted.deleted) {
+      await kv.set(KEY, deleted.posts);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof InvalidPostCollectionError) {
+      return invalidCollectionResponse(err);
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
   }
