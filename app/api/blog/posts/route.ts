@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import {
+  deleteRawPostFromCollection,
+  getPostCollectionForWrite,
+  InvalidPostCollectionError,
+  updateRawPostCollection,
+} from "@/lib/postCollectionStore";
 
 const KEY = "blog:posts";
 const hasKvEnv =
@@ -15,18 +21,29 @@ export type BlogPost = {
   createdAt: string;
 };
 
+function isBlogPost(p: unknown): p is BlogPost {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    typeof (p as BlogPost).id === "string" &&
+    typeof (p as BlogPost).slug === "string" &&
+    typeof (p as BlogPost).title === "string" &&
+    typeof (p as BlogPost).content === "string" &&
+    Array.isArray((p as BlogPost).imageUrls) &&
+    typeof (p as BlogPost).createdAt === "string"
+  );
+}
+
 function parsePosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
+  return data.filter(isBlogPost);
+}
+
+function invalidCollectionResponse(err: InvalidPostCollectionError) {
+  console.error(err.message);
+  return NextResponse.json(
+    { error: "Stored posts data is invalid; refusing to overwrite it." },
+    { status: 500 }
   );
 }
 
@@ -84,11 +101,13 @@ export async function POST(request: NextRequest) {
   const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
   try {
     const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    const rawPosts = getPostCollectionForWrite(data, KEY);
+    await kv.set(KEY, [post, ...rawPosts]);
     return NextResponse.json({ post });
   } catch (err) {
+    if (err instanceof InvalidPostCollectionError) {
+      return invalidCollectionResponse(err);
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -128,21 +147,23 @@ export async function PUT(request: NextRequest) {
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
     const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 });
-    }
-    posts[idx] = {
-      ...posts[idx],
+    const rawPosts = getPostCollectionForWrite(data, KEY);
+    const updated = updateRawPostCollection(rawPosts, isBlogPost, id, (post) => ({
+      ...post,
       title,
       content,
       slug,
       imageUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    }));
+    if (!updated) {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
+    await kv.set(KEY, updated.posts);
+    return NextResponse.json({ post: updated.post });
   } catch (err) {
+    if (err instanceof InvalidPostCollectionError) {
+      return invalidCollectionResponse(err);
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -169,10 +190,16 @@ export async function DELETE(request: NextRequest) {
   }
   try {
     const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    const rawPosts = getPostCollectionForWrite(data, KEY);
+    const deleted = deleteRawPostFromCollection(rawPosts, isBlogPost, id);
+    if (deleted.deleted) {
+      await kv.set(KEY, deleted.posts);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof InvalidPostCollectionError) {
+      return invalidCollectionResponse(err);
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
   }
