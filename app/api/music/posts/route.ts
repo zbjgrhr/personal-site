@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
+import {
+  mutatePostCollection,
+  PostCollectionStoreError,
+  PostNotFoundError,
+} from "@/lib/postCollectionStore";
 
 const KEY = "music:posts";
 const hasKvEnv =
@@ -22,28 +27,41 @@ export type MusicPost = {
   createdAt: string;
 };
 
+function isMusicPost(post: unknown): post is MusicPost {
+  return (
+    !!post &&
+    typeof post === "object" &&
+    typeof (post as MusicPost).id === "string" &&
+    typeof (post as MusicPost).slug === "string" &&
+    typeof (post as MusicPost).title === "string" &&
+    typeof (post as MusicPost).content === "string" &&
+    Array.isArray((post as MusicPost).imageUrls) &&
+    typeof (post as MusicPost).createdAt === "string"
+  );
+}
+
+function normalizeMusicPost(post: MusicPost): MusicPost {
+  const raw = post as MusicPost & { tag?: unknown };
+  return {
+    ...post,
+    videoUrls: Array.isArray(raw.videoUrls)
+      ? raw.videoUrls.filter((u): u is string => typeof u === "string")
+      : [],
+    tag: isValidTag(raw.tag) ? raw.tag : "Voc.",
+  };
+}
+
 function parsePosts(data: unknown): MusicPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is MusicPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as MusicPost).id === "string" &&
-      typeof (p as MusicPost).slug === "string" &&
-      typeof (p as MusicPost).title === "string" &&
-      typeof (p as MusicPost).content === "string" &&
-      Array.isArray((p as MusicPost).imageUrls) &&
-      typeof (p as MusicPost).createdAt === "string"
-  ).map((p) => {
-    const raw = p as MusicPost & { tag?: unknown };
-    return {
-      ...p,
-      videoUrls: Array.isArray(raw.videoUrls)
-        ? raw.videoUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      tag: isValidTag(raw.tag) ? raw.tag : "Voc.",
-    };
-  });
+  return data.filter(isMusicPost).map(normalizeMusicPost);
+}
+
+function mutationErrorResponse(err: unknown, fallback: string) {
+  console.error("KV set error:", err);
+  if (err instanceof PostCollectionStoreError) {
+    return NextResponse.json({ error: err.message }, { status: err.status });
+  }
+  return NextResponse.json({ error: fallback }, { status: 500 });
 }
 
 export async function GET() {
@@ -103,14 +121,13 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    await mutatePostCollection(KEY, (entries) => ({
+      entries: [post, ...entries],
+      result: post,
+    }));
     return NextResponse.json({ post });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+    return mutationErrorResponse(err, "Failed to save");
   }
 }
 
@@ -151,26 +168,29 @@ export async function PUT(request: NextRequest) {
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 });
-    }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-      videoUrls,
-      tag,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    const post = await mutatePostCollection(KEY, (entries) => {
+      let updatedPost: MusicPost | null = null;
+      const nextEntries = entries.map((entry) => {
+        if (!isMusicPost(entry) || entry.id !== id) return entry;
+
+        updatedPost = {
+          ...normalizeMusicPost(entry),
+          title,
+          content,
+          slug,
+          imageUrls,
+          videoUrls,
+          tag,
+        };
+        return updatedPost;
+      });
+
+      if (!updatedPost) throw new PostNotFoundError();
+      return { entries: nextEntries, result: updatedPost };
+    });
+    return NextResponse.json({ post });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+    return mutationErrorResponse(err, "Failed to save");
   }
 }
 
@@ -194,12 +214,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await mutatePostCollection(KEY, (entries) => ({
+      entries: entries.filter((entry) => !isMusicPost(entry) || entry.id !== id),
+      result: true,
+    }));
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+    return mutationErrorResponse(err, "Failed to delete");
   }
 }
