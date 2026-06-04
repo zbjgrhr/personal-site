@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mutatePostCollection } from "@/lib/postCollectionStore";
 
-type EvalArgs = [] | [string, "0" | "1", string];
-
 class FakeKvClient {
   casAttempts = 0;
   beforeCas?: () => void;
@@ -22,7 +20,11 @@ class FakeKvClient {
     this.casAttempts += 1;
     this.beforeCas?.();
 
-    const [expectedRaw, expectedExists, nextRaw] = args as EvalArgs;
+    const [expectedRaw, expectedExists, nextRaw] = args as unknown as [
+      string,
+      "0" | "1",
+      string,
+    ];
     const matches =
       (this.raw === null && expectedExists === "0") || this.raw === expectedRaw;
 
@@ -50,7 +52,7 @@ test("mutations preserve malformed sibling entries", async () => {
   };
   const client = new FakeKvClient(JSON.stringify([post, malformedSibling]));
 
-  const result = await mutatePostCollection(
+  const result = await mutatePostCollection<typeof post>(
     "blog:posts",
     (entries) => {
       let updatedPost: typeof post | null = null;
