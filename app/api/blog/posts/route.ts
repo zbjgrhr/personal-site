@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import {
+  mutatePostCollection,
+  PostCollectionStoreError,
+  PostNotFoundError,
+} from "@/lib/postCollectionStore";
 
 const KEY = "blog:posts";
 const hasKvEnv =
@@ -15,19 +20,30 @@ export type BlogPost = {
   createdAt: string;
 };
 
+function isBlogPost(post: unknown): post is BlogPost {
+  return (
+    !!post &&
+    typeof post === "object" &&
+    typeof (post as BlogPost).id === "string" &&
+    typeof (post as BlogPost).slug === "string" &&
+    typeof (post as BlogPost).title === "string" &&
+    typeof (post as BlogPost).content === "string" &&
+    Array.isArray((post as BlogPost).imageUrls) &&
+    typeof (post as BlogPost).createdAt === "string"
+  );
+}
+
 function parsePosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data.filter(isBlogPost);
+}
+
+function mutationErrorResponse(err: unknown, fallback: string) {
+  console.error("KV set error:", err);
+  if (err instanceof PostCollectionStoreError) {
+    return NextResponse.json({ error: err.message }, { status: err.status });
+  }
+  return NextResponse.json({ error: fallback }, { status: 500 });
 }
 
 export async function GET() {
@@ -83,14 +99,13 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    await mutatePostCollection(KEY, (entries) => ({
+      entries: [post, ...entries],
+      result: post,
+    }));
     return NextResponse.json({ post });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+    return mutationErrorResponse(err, "Failed to save");
   }
 }
 
@@ -127,24 +142,27 @@ export async function PUT(request: NextRequest) {
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 });
-    }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    const post = await mutatePostCollection(KEY, (entries) => {
+      let updatedPost: BlogPost | null = null;
+      const nextEntries = entries.map((entry) => {
+        if (!isBlogPost(entry) || entry.id !== id) return entry;
+
+        updatedPost = {
+          ...entry,
+          title,
+          content,
+          slug,
+          imageUrls,
+        };
+        return updatedPost;
+      });
+
+      if (!updatedPost) throw new PostNotFoundError();
+      return { entries: nextEntries, result: updatedPost };
+    });
+    return NextResponse.json({ post });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+    return mutationErrorResponse(err, "Failed to save");
   }
 }
 
@@ -168,12 +186,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await mutatePostCollection(KEY, (entries) => ({
+      entries: entries.filter((entry) => !isBlogPost(entry) || entry.id !== id),
+      result: true,
+    }));
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("KV set error:", err);
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+    return mutationErrorResponse(err, "Failed to delete");
   }
 }
