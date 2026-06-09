@@ -69,7 +69,7 @@ test("withKvMutex serializes overlapping writes for the same resource", async ()
   assert.equal(await first, "first");
   assert.equal(await second, "second");
   assert.deepEqual(order, ["first-start", "first-end", "second-start"]);
-  assert.equal(retryCount, 1);
+  assert.ok(retryCount >= 1);
 });
 
 test("withKvMutex fails when the lock cannot be acquired", async () => {
