@@ -5,7 +5,7 @@ import { getAllowedWorkPdfUrl } from "../lib/workPdfAccess";
 const savedPdfUrl = "https://blob.vercel-storage.com/saved.pdf";
 
 const client = {
-  async get<T = unknown>(_key: string): Promise<T | null> {
+  async get<T = unknown>(): Promise<T | null> {
     return [
       {
         pdfUrls: [savedPdfUrl],
