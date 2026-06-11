@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getAllowedWorkPdfUrl } from "@/lib/workPdfAccess";
 
+export const dynamic = "force-dynamic";
+
 export default async function ViewPdfPage({
   searchParams,
 }: { searchParams: Promise<{ url?: string }> }) {
