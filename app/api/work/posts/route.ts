@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { mutateKvArray } from "@/lib/kvCollectionStore";
 
 const KEY = "work:posts";
 const hasKvEnv =
@@ -19,35 +20,48 @@ export type WorkPost = {
   createdAt: string;
 };
 
+type RawWorkPost = Omit<
+  WorkPost,
+  "videoUrls" | "audioUrls" | "pdfUrls" | "zipUrls"
+> & {
+  videoUrls?: unknown;
+  audioUrls?: unknown;
+  pdfUrls?: unknown;
+  zipUrls?: unknown;
+};
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((u): u is string => typeof u === "string")
+    : [];
+}
+
+function isRawWorkPost(p: unknown): p is RawWorkPost {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    typeof (p as RawWorkPost).id === "string" &&
+    typeof (p as RawWorkPost).slug === "string" &&
+    typeof (p as RawWorkPost).title === "string" &&
+    typeof (p as RawWorkPost).content === "string" &&
+    Array.isArray((p as RawWorkPost).imageUrls) &&
+    typeof (p as RawWorkPost).createdAt === "string"
+  );
+}
+
+function normalizeWorkPost(p: RawWorkPost): WorkPost {
+  return {
+    ...p,
+    videoUrls: stringArray(p.videoUrls),
+    audioUrls: stringArray(p.audioUrls),
+    pdfUrls: stringArray(p.pdfUrls),
+    zipUrls: stringArray(p.zipUrls),
+  };
+}
+
 function parsePosts(data: unknown): WorkPost[] {
   if (!Array.isArray(data)) return [];
-  return data
-    .filter(
-      (p): p is WorkPost =>
-        p &&
-        typeof p === "object" &&
-        typeof (p as WorkPost).id === "string" &&
-        typeof (p as WorkPost).slug === "string" &&
-        typeof (p as WorkPost).title === "string" &&
-        typeof (p as WorkPost).content === "string" &&
-        Array.isArray((p as WorkPost).imageUrls) &&
-        typeof (p as WorkPost).createdAt === "string"
-    )
-    .map((p) => ({
-      ...p,
-      videoUrls: Array.isArray((p as WorkPost).videoUrls)
-        ? (p as WorkPost).videoUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      audioUrls: Array.isArray((p as WorkPost).audioUrls)
-        ? (p as WorkPost).audioUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      pdfUrls: Array.isArray((p as WorkPost).pdfUrls)
-        ? (p as WorkPost).pdfUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      zipUrls: Array.isArray((p as WorkPost).zipUrls)
-        ? (p as WorkPost).zipUrls.filter((u): u is string => typeof u === "string")
-        : [],
-    }));
+  return data.filter(isRawWorkPost).map(normalizeWorkPost);
 }
 
 export async function GET() {
@@ -115,10 +129,10 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: WorkPost = { id, slug, title, content, imageUrls, videoUrls, audioUrls, pdfUrls, zipUrls, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    await mutateKvArray(kv, KEY, (items) => ({
+      items: [post, ...items],
+      result: post,
+    }));
     return NextResponse.json({ post });
   } catch (err) {
     console.error("KV set error:", err);
@@ -171,26 +185,36 @@ export async function PUT(request: NextRequest) {
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
+    const updatedPost = await mutateKvArray(kv, KEY, (items) => {
+      let updated: WorkPost | null = null;
+      const nextItems = items.map((item) => {
+        if (!isRawWorkPost(item) || item.id !== id) return item;
+        updated = {
+          ...normalizeWorkPost(item),
+          title,
+          content,
+          slug,
+          imageUrls,
+          videoUrls,
+          audioUrls,
+          pdfUrls,
+          zipUrls,
+        };
+        return updated;
+      });
+      if (!updated) {
+        throw new Error("POST_NOT_FOUND");
+      }
+      return { items: nextItems, result: updated };
+    });
+    if (!updatedPost) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-      videoUrls,
-      audioUrls,
-      pdfUrls,
-      zipUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    return NextResponse.json({ post: updatedPost });
   } catch (err) {
+    if (err instanceof Error && err.message === "POST_NOT_FOUND") {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -216,9 +240,10 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await mutateKvArray(kv, KEY, (items) => ({
+      items: items.filter((item) => !isRawWorkPost(item) || item.id !== id),
+      result: true,
+    }));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("KV set error:", err);
