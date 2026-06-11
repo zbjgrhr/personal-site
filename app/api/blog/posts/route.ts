@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { mutateKvArray } from "@/lib/kvCollectionStore";
 
 const KEY = "blog:posts";
 const hasKvEnv =
@@ -15,19 +16,22 @@ export type BlogPost = {
   createdAt: string;
 };
 
+function isBlogPost(p: unknown): p is BlogPost {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    typeof (p as BlogPost).id === "string" &&
+    typeof (p as BlogPost).slug === "string" &&
+    typeof (p as BlogPost).title === "string" &&
+    typeof (p as BlogPost).content === "string" &&
+    Array.isArray((p as BlogPost).imageUrls) &&
+    typeof (p as BlogPost).createdAt === "string"
+  );
+}
+
 function parsePosts(data: unknown): BlogPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
-  );
+  return data.filter(isBlogPost);
 }
 
 export async function GET() {
@@ -83,10 +87,10 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    await mutateKvArray(kv, KEY, (items) => ({
+      items: [post, ...items],
+      result: post,
+    }));
     return NextResponse.json({ post });
   } catch (err) {
     console.error("KV set error:", err);
@@ -127,22 +131,32 @@ export async function PUT(request: NextRequest) {
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
+    const updatedPost = await mutateKvArray(kv, KEY, (items) => {
+      let updated: BlogPost | null = null;
+      const nextItems = items.map((item) => {
+        if (!isBlogPost(item) || item.id !== id) return item;
+        updated = {
+          ...item,
+          title,
+          content,
+          slug,
+          imageUrls,
+        };
+        return updated;
+      });
+      if (!updated) {
+        throw new Error("POST_NOT_FOUND");
+      }
+      return { items: nextItems, result: updated };
+    });
+    if (!updatedPost) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    return NextResponse.json({ post: updatedPost });
   } catch (err) {
+    if (err instanceof Error && err.message === "POST_NOT_FOUND") {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -168,9 +182,10 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await mutateKvArray(kv, KEY, (items) => ({
+      items: items.filter((item) => !isBlogPost(item) || item.id !== id),
+      result: true,
+    }));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("KV set error:", err);
