@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import { mutateKvArray } from "@/lib/kvCollectionStore";
 import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
 
 const KEY = "music:posts";
@@ -22,28 +23,37 @@ export type MusicPost = {
   createdAt: string;
 };
 
+type RawMusicPost = Omit<MusicPost, "videoUrls" | "tag"> & {
+  videoUrls?: unknown;
+  tag?: unknown;
+};
+
+function isRawMusicPost(p: unknown): p is RawMusicPost {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    typeof (p as RawMusicPost).id === "string" &&
+    typeof (p as RawMusicPost).slug === "string" &&
+    typeof (p as RawMusicPost).title === "string" &&
+    typeof (p as RawMusicPost).content === "string" &&
+    Array.isArray((p as RawMusicPost).imageUrls) &&
+    typeof (p as RawMusicPost).createdAt === "string"
+  );
+}
+
+function normalizeMusicPost(p: RawMusicPost): MusicPost {
+  return {
+    ...p,
+    videoUrls: Array.isArray(p.videoUrls)
+      ? p.videoUrls.filter((u): u is string => typeof u === "string")
+      : [],
+    tag: isValidTag(p.tag) ? p.tag : "Voc.",
+  };
+}
+
 function parsePosts(data: unknown): MusicPost[] {
   if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is MusicPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as MusicPost).id === "string" &&
-      typeof (p as MusicPost).slug === "string" &&
-      typeof (p as MusicPost).title === "string" &&
-      typeof (p as MusicPost).content === "string" &&
-      Array.isArray((p as MusicPost).imageUrls) &&
-      typeof (p as MusicPost).createdAt === "string"
-  ).map((p) => {
-    const raw = p as MusicPost & { tag?: unknown };
-    return {
-      ...p,
-      videoUrls: Array.isArray(raw.videoUrls)
-        ? raw.videoUrls.filter((u): u is string => typeof u === "string")
-        : [],
-      tag: isValidTag(raw.tag) ? raw.tag : "Voc.",
-    };
-  });
+  return data.filter(isRawMusicPost).map(normalizeMusicPost);
 }
 
 export async function GET() {
@@ -103,10 +113,10 @@ export async function POST(request: NextRequest) {
   const createdAt = new Date().toISOString();
   const post: MusicPost = { id, slug, title, content, imageUrls, videoUrls, tag, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
+    await mutateKvArray(kv, KEY, (items) => ({
+      items: [post, ...items],
+      result: post,
+    }));
     return NextResponse.json({ post });
   } catch (err) {
     console.error("KV set error:", err);
@@ -151,24 +161,34 @@ export async function PUT(request: NextRequest) {
       ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
       : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
+    const updatedPost = await mutateKvArray(kv, KEY, (items) => {
+      let updated: MusicPost | null = null;
+      const nextItems = items.map((item) => {
+        if (!isRawMusicPost(item) || item.id !== id) return item;
+        updated = {
+          ...normalizeMusicPost(item),
+          title,
+          content,
+          slug,
+          imageUrls,
+          videoUrls,
+          tag,
+        };
+        return updated;
+      });
+      if (!updated) {
+        throw new Error("POST_NOT_FOUND");
+      }
+      return { items: nextItems, result: updated };
+    });
+    if (!updatedPost) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-      videoUrls,
-      tag,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    return NextResponse.json({ post: updatedPost });
   } catch (err) {
+    if (err instanceof Error && err.message === "POST_NOT_FOUND") {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -194,9 +214,10 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
+    await mutateKvArray(kv, KEY, (items) => ({
+      items: items.filter((item) => !isRawMusicPost(item) || item.id !== id),
+      result: true,
+    }));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("KV set error:", err);
