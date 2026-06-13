@@ -5,6 +5,8 @@ import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { HoverPlayMedia } from "@/app/music/HoverPlayMedia";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "work:posts";
 
 type WorkPost = {

@@ -5,6 +5,8 @@ import { isAdmin } from "@/lib/auth";
 import { getTagStyles } from "@/lib/musicTags";
 import { HoverPlayMedia } from "../HoverPlayMedia";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "music:posts";
 
 const VALID_TAGS = ["Voc.", "Wr.", "Aud."] as const;
