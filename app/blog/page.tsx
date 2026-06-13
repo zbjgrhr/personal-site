@@ -3,6 +3,8 @@ import Image from "next/image";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "blog:posts";
 
 type BlogPost = {
