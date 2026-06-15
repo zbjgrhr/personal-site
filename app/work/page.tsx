@@ -4,6 +4,8 @@ import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { Playfair_Display } from "next/font/google";
 
+export const dynamic = "force-dynamic";
+
 const playfair = Playfair_Display({
   subsets: ["latin"],
   weight: ["400", "500", "600"],

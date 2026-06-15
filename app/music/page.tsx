@@ -4,6 +4,8 @@ import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { getTagStyles } from "@/lib/musicTags";
 
+export const dynamic = "force-dynamic";
+
 const KEY = "music:posts";
 
 const VALID_TAGS = ["Voc.", "Wr.", "Aud."] as const;
