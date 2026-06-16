@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { kv } from "@vercel/kv";
+import { isAllowedWorkPdfUrl, WORK_POSTS_KEY } from "@/lib/workPdfAccess";
 
-function isValidPdfUrl(url: string | null): boolean {
-  if (!url || typeof url !== "string") return false;
+export const dynamic = "force-dynamic";
+
+async function canViewPdfUrl(url: string | null): Promise<boolean> {
   try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
+    const data = await kv.get<unknown>(WORK_POSTS_KEY);
+    return isAllowedWorkPdfUrl(url, data);
   } catch {
     return false;
   }
@@ -14,7 +17,7 @@ export default async function ViewPdfPage({
   searchParams,
 }: { searchParams: Promise<{ url?: string }> }) {
   const { url } = await searchParams;
-  const valid = isValidPdfUrl(url ?? null);
+  const valid = await canViewPdfUrl(url ?? null);
 
   return (
     <article className="flex min-h-[80vh] flex-col">
