@@ -9,8 +9,11 @@ type KvEnv = {
   KV_REST_API_TOKEN?: string;
 };
 
-export function hasKvEnv(env: KvEnv = process.env): boolean {
-  return !!env.KV_REST_API_URL && !!env.KV_REST_API_TOKEN;
+export function hasKvEnv(env?: KvEnv): boolean {
+  const kvUrl = env?.KV_REST_API_URL ?? process.env.KV_REST_API_URL;
+  const kvToken = env?.KV_REST_API_TOKEN ?? process.env.KV_REST_API_TOKEN;
+
+  return !!kvUrl && !!kvToken;
 }
 
 function isHttpsUrl(url: string): boolean {
