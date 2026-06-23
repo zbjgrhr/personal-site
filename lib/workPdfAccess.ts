@@ -4,7 +4,12 @@ type WorkPostPdfRecord = {
   pdfUrls?: unknown;
 };
 
-export function hasKvEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+type KvEnv = {
+  KV_REST_API_URL?: string;
+  KV_REST_API_TOKEN?: string;
+};
+
+export function hasKvEnv(env: KvEnv = process.env): boolean {
   return !!env.KV_REST_API_URL && !!env.KV_REST_API_TOKEN;
 }
 
