@@ -1,6 +1,8 @@
 import { kv } from "@vercel/kv";
 import { PhotographsGrid, type MediaItem } from "./PhotographsGrid";
 
+export const dynamic = "force-dynamic";
+
 const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
 const ABOUT_PHOTO_KEY = "about:photo_url";
@@ -61,12 +63,26 @@ function parseMusicPosts(data: unknown): MusicPost[] {
     }));
 }
 
+function hasKvEnv(): boolean {
+  return !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+}
+
 async function getAllMedia(): Promise<MediaItem[]> {
-  const [blogData, musicData, aboutUrl] = await Promise.all([
-    kv.get<unknown>(BLOG_KEY),
-    kv.get<unknown>(MUSIC_KEY),
-    kv.get<string>(ABOUT_PHOTO_KEY),
-  ]);
+  if (!hasKvEnv()) return [];
+
+  let blogData: unknown;
+  let musicData: unknown;
+  let aboutUrl: string | null;
+
+  try {
+    [blogData, musicData, aboutUrl] = await Promise.all([
+      kv.get<unknown>(BLOG_KEY),
+      kv.get<unknown>(MUSIC_KEY),
+      kv.get<string>(ABOUT_PHOTO_KEY),
+    ]);
+  } catch {
+    return [];
+  }
 
   const items: MediaItem[] = [];
   const now = new Date().toISOString();
