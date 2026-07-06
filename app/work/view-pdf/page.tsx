@@ -1,12 +1,19 @@
 import Link from "next/link";
+import { kv } from "@vercel/kv";
+import { findAuthorizedPdfUrl, WORK_POSTS_KEY } from "@/lib/workPdfAccess";
 
-function isValidPdfUrl(url: string | null): boolean {
-  if (!url || typeof url !== "string") return false;
+export const dynamic = "force-dynamic";
+
+const hasKvEnv =
+  !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+
+async function getAuthorizedPdfUrl(url: string | null): Promise<string | null> {
+  if (!hasKvEnv) return null;
   try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
+    const posts = await kv.get<unknown>(WORK_POSTS_KEY);
+    return findAuthorizedPdfUrl(url, posts ?? []);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -14,7 +21,7 @@ export default async function ViewPdfPage({
   searchParams,
 }: { searchParams: Promise<{ url?: string }> }) {
   const { url } = await searchParams;
-  const valid = isValidPdfUrl(url ?? null);
+  const pdfUrl = await getAuthorizedPdfUrl(url ?? null);
 
   return (
     <article className="flex min-h-[80vh] flex-col">
@@ -22,9 +29,9 @@ export default async function ViewPdfPage({
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
           PDF viewer
         </h1>
-        {valid && (
+        {pdfUrl && (
           <a
-            href={url!}
+            href={pdfUrl}
             download
             className="text-sm text-zinc-600 underline hover:no-underline dark:text-zinc-400"
           >
@@ -38,10 +45,10 @@ export default async function ViewPdfPage({
           ← Works
         </Link>
       </div>
-      {valid ? (
+      {pdfUrl ? (
         <div className="min-h-[85vh] w-full flex-1 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
           <iframe
-            src={url!}
+            src={pdfUrl}
             title="PDF"
             className="h-[85vh] w-full min-h-[600px]"
           />
