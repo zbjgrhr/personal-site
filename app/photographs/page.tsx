@@ -5,6 +5,11 @@ const BLOG_KEY = "blog:posts";
 const MUSIC_KEY = "music:posts";
 const ABOUT_PHOTO_KEY = "about:photo_url";
 
+export const dynamic = "force-dynamic";
+
+const hasKvEnv =
+  !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+
 type BlogPost = {
   id: string;
   slug: string;
@@ -62,76 +67,82 @@ function parseMusicPosts(data: unknown): MusicPost[] {
 }
 
 async function getAllMedia(): Promise<MediaItem[]> {
-  const [blogData, musicData, aboutUrl] = await Promise.all([
-    kv.get<unknown>(BLOG_KEY),
-    kv.get<unknown>(MUSIC_KEY),
-    kv.get<string>(ABOUT_PHOTO_KEY),
-  ]);
+  if (!hasKvEnv) return [];
 
-  const items: MediaItem[] = [];
-  const now = new Date().toISOString();
+  try {
+    const [blogData, musicData, aboutUrl] = await Promise.all([
+      kv.get<unknown>(BLOG_KEY),
+      kv.get<unknown>(MUSIC_KEY),
+      kv.get<string>(ABOUT_PHOTO_KEY),
+    ]);
 
-  const blogPosts = parseBlogPosts(blogData ?? []);
-  for (const post of blogPosts) {
-    const urls = post.imageUrls ?? [];
-    for (let i = 0; i < urls.length; i++) {
-      if (typeof urls[i] !== "string") continue;
+    const items: MediaItem[] = [];
+    const now = new Date().toISOString();
+
+    const blogPosts = parseBlogPosts(blogData ?? []);
+    for (const post of blogPosts) {
+      const urls = post.imageUrls ?? [];
+      for (let i = 0; i < urls.length; i++) {
+        if (typeof urls[i] !== "string") continue;
+        items.push({
+          id: `blog-${post.id}-${i}`,
+          type: "image",
+          url: urls[i],
+          source: "blog",
+          createdAt: post.createdAt ?? now,
+          title: post.title,
+          link: `/blog/${post.slug}`,
+        });
+      }
+    }
+
+    const musicPosts = parseMusicPosts(musicData ?? []);
+    for (const post of musicPosts) {
+      const imageUrls = post.imageUrls ?? [];
+      const videoUrls = post.videoUrls ?? [];
+      for (let i = 0; i < imageUrls.length; i++) {
+        if (typeof imageUrls[i] !== "string") continue;
+        items.push({
+          id: `music-${post.id}-img-${i}`,
+          type: "image",
+          url: imageUrls[i],
+          source: "music",
+          createdAt: post.createdAt ?? now,
+          title: post.title,
+          link: `/music/${post.slug}`,
+        });
+      }
+      for (let i = 0; i < videoUrls.length; i++) {
+        if (typeof videoUrls[i] !== "string") continue;
+        items.push({
+          id: `music-${post.id}-vid-${i}`,
+          type: "video",
+          url: videoUrls[i],
+          source: "music",
+          createdAt: post.createdAt ?? now,
+          title: post.title,
+          link: `/music/${post.slug}`,
+        });
+      }
+    }
+
+    if (aboutUrl && typeof aboutUrl === "string") {
       items.push({
-        id: `blog-${post.id}-${i}`,
+        id: "about-photo",
         type: "image",
-        url: urls[i],
-        source: "blog",
-        createdAt: post.createdAt ?? now,
-        title: post.title,
-        link: `/blog/${post.slug}`,
+        url: aboutUrl,
+        source: "about",
+        createdAt: now,
+        title: "About",
+        link: "/about",
       });
     }
-  }
 
-  const musicPosts = parseMusicPosts(musicData ?? []);
-  for (const post of musicPosts) {
-    const imageUrls = post.imageUrls ?? [];
-    const videoUrls = post.videoUrls ?? [];
-    for (let i = 0; i < imageUrls.length; i++) {
-      if (typeof imageUrls[i] !== "string") continue;
-      items.push({
-        id: `music-${post.id}-img-${i}`,
-        type: "image",
-        url: imageUrls[i],
-        source: "music",
-        createdAt: post.createdAt ?? now,
-        title: post.title,
-        link: `/music/${post.slug}`,
-      });
-    }
-    for (let i = 0; i < videoUrls.length; i++) {
-      if (typeof videoUrls[i] !== "string") continue;
-      items.push({
-        id: `music-${post.id}-vid-${i}`,
-        type: "video",
-        url: videoUrls[i],
-        source: "music",
-        createdAt: post.createdAt ?? now,
-        title: post.title,
-        link: `/music/${post.slug}`,
-      });
-    }
+    items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    return items;
+  } catch {
+    return [];
   }
-
-  if (aboutUrl && typeof aboutUrl === "string") {
-    items.push({
-      id: "about-photo",
-      type: "image",
-      url: aboutUrl,
-      source: "about",
-      createdAt: now,
-      title: "About",
-      link: "/about",
-    });
-  }
-
-  items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-  return items;
 }
 
 export default async function PhotographsPage() {
