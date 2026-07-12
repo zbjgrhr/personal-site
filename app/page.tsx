@@ -6,6 +6,8 @@ import {
   type WorkPostSummary,
 } from "./HomeSections";
 
+export const dynamic = "force-dynamic";
+
 async function getAboutPhotoUrl(): Promise<string | null> {
   try {
     const url = await kv.get<string>("about:photo_url");
