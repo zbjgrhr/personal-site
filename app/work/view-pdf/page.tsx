@@ -1,20 +1,13 @@
 import Link from "next/link";
+import { canViewWorkPdfUrl } from "@/lib/workPdfAccess";
 
-function isValidPdfUrl(url: string | null): boolean {
-  if (!url || typeof url !== "string") return false;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
+export const dynamic = "force-dynamic";
 
 export default async function ViewPdfPage({
   searchParams,
 }: { searchParams: Promise<{ url?: string }> }) {
   const { url } = await searchParams;
-  const valid = isValidPdfUrl(url ?? null);
+  const valid = await canViewWorkPdfUrl(url ?? null);
 
   return (
     <article className="flex min-h-[80vh] flex-col">

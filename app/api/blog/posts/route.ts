@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
+import {
+  KvCollectionLockError,
+  withKvCollectionLock,
+} from "@/lib/kvCollectionLock";
+import { makeUniqueSlug } from "@/lib/slugs";
 
 const KEY = "blog:posts";
 const hasKvEnv =
@@ -15,19 +20,25 @@ export type BlogPost = {
   createdAt: string;
 };
 
-function parsePosts(data: unknown): BlogPost[] {
-  if (!Array.isArray(data)) return [];
-  return data.filter(
-    (p): p is BlogPost =>
-      p &&
-      typeof p === "object" &&
-      typeof (p as BlogPost).id === "string" &&
-      typeof (p as BlogPost).slug === "string" &&
-      typeof (p as BlogPost).title === "string" &&
-      typeof (p as BlogPost).content === "string" &&
-      Array.isArray((p as BlogPost).imageUrls) &&
-      typeof (p as BlogPost).createdAt === "string"
+function isBlogPost(post: unknown): post is BlogPost {
+  return (
+    !!post &&
+    typeof post === "object" &&
+    typeof (post as BlogPost).id === "string" &&
+    typeof (post as BlogPost).slug === "string" &&
+    typeof (post as BlogPost).title === "string" &&
+    typeof (post as BlogPost).content === "string" &&
+    Array.isArray((post as BlogPost).imageUrls) &&
+    typeof (post as BlogPost).createdAt === "string"
   );
+}
+
+function getRawPosts(data: unknown): unknown[] {
+  return Array.isArray(data) ? data : [];
+}
+
+function parsePosts(data: unknown): BlogPost[] {
+  return getRawPosts(data).filter(isBlogPost);
 }
 
 export async function GET() {
@@ -75,20 +86,27 @@ export async function POST(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   const id = `post-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const createdAt = new Date().toISOString();
-  const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    posts.unshift(post);
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post });
+    return await withKvCollectionLock(KEY, async () => {
+      const data = await kv.get<unknown>(KEY);
+      const rawPosts = getRawPosts(data);
+      const posts = parsePosts(rawPosts);
+      const preferredSlug =
+        typeof body.slug === "string" && body.slug.trim() ? body.slug : title;
+      const slug = makeUniqueSlug(preferredSlug, id, posts);
+      const post: BlogPost = { id, slug, title, content, imageUrls, createdAt };
+      await kv.set(KEY, [post, ...rawPosts]);
+      return NextResponse.json({ post });
+    });
   } catch (err) {
+    if (err instanceof KvCollectionLockError) {
+      return NextResponse.json(
+        { error: "Another update is in progress. Please retry." },
+        { status: 503 }
+      );
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -122,27 +140,38 @@ export async function PUT(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []);
-    const idx = posts.findIndex((p) => p.id === id);
-    if (idx === -1) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 });
-    }
-    posts[idx] = {
-      ...posts[idx],
-      title,
-      content,
-      slug,
-      imageUrls,
-    };
-    await kv.set(KEY, posts);
-    return NextResponse.json({ post: posts[idx] });
+    return await withKvCollectionLock(KEY, async () => {
+      const data = await kv.get<unknown>(KEY);
+      const rawPosts = getRawPosts(data);
+      const posts = parsePosts(rawPosts);
+      const idx = rawPosts.findIndex(
+        (post) => isBlogPost(post) && post.id === id
+      );
+      if (idx === -1) {
+        return NextResponse.json({ error: "Post not found" }, { status: 404 });
+      }
+      const preferredSlug =
+        typeof body.slug === "string" && body.slug.trim() ? body.slug : title;
+      const slug = makeUniqueSlug(preferredSlug, id, posts, id);
+      const post = {
+        ...(rawPosts[idx] as BlogPost),
+        title,
+        content,
+        slug,
+        imageUrls,
+      };
+      rawPosts[idx] = post;
+      await kv.set(KEY, rawPosts);
+      return NextResponse.json({ post });
+    });
   } catch (err) {
+    if (err instanceof KvCollectionLockError) {
+      return NextResponse.json(
+        { error: "Another update is in progress. Please retry." },
+        { status: 503 }
+      );
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
@@ -168,11 +197,22 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   try {
-    const data = await kv.get<unknown>(KEY);
-    const posts = parsePosts(data ?? []).filter((p) => p.id !== id);
-    await kv.set(KEY, posts);
-    return NextResponse.json({ ok: true });
+    return await withKvCollectionLock(KEY, async () => {
+      const data = await kv.get<unknown>(KEY);
+      const rawPosts = getRawPosts(data);
+      const posts = rawPosts.filter(
+        (post) => !(isBlogPost(post) && post.id === id)
+      );
+      await kv.set(KEY, posts);
+      return NextResponse.json({ ok: true });
+    });
   } catch (err) {
+    if (err instanceof KvCollectionLockError) {
+      return NextResponse.json(
+        { error: "Another update is in progress. Please retry." },
+        { status: 503 }
+      );
+    }
     console.error("KV set error:", err);
     return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
   }
