@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { isAdmin } from "@/lib/auth";
 import { MUSIC_TAGS, type MusicTag } from "@/lib/musicTags";
+import { resolveUpdatedSlug } from "@/lib/postSlug";
 
 const KEY = "music:posts";
 const hasKvEnv =
@@ -146,10 +147,6 @@ export async function PUT(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
-  const slug =
-    typeof body.slug === "string" && body.slug.trim()
-      ? body.slug.trim().replace(/\s+/g, "-").toLowerCase()
-      : title.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "");
   try {
     const data = await kv.get<unknown>(KEY);
     const posts = parsePosts(data ?? []);
@@ -157,6 +154,7 @@ export async function PUT(request: NextRequest) {
     if (idx === -1) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
+    const slug = resolveUpdatedSlug(body.slug, posts[idx].slug);
     posts[idx] = {
       ...posts[idx],
       title,
