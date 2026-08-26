@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setAdminCookie, getCookieName } from "@/lib/auth";
+import { setAdminCookie, getCookieName, getAdminSessionCookieOptions } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   const secret = process.env.ADMIN_SECRET;
@@ -13,12 +13,6 @@ export async function POST(request: NextRequest) {
   }
   const token = setAdminCookie();
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(getCookieName(), token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    path: "/",
-  });
+  res.cookies.set(getCookieName(), token, getAdminSessionCookieOptions("set"));
   return res;
 }
