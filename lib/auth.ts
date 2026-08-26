@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 const COOKIE_NAME = "admin_session";
 const SALT = "admin";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function getSessionToken(): string {
   const secret = process.env.ADMIN_SECRET;
@@ -12,6 +13,17 @@ function getSessionToken(): string {
 
 export function setAdminCookie(): string {
   return getSessionToken();
+}
+
+/** Shared Set-Cookie attributes so login and logout target the same cookie. */
+export function getAdminSessionCookieOptions(kind: "set" | "clear") {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: kind === "clear" ? 0 : SESSION_MAX_AGE_SECONDS,
+  };
 }
 
 export async function isAdmin(): Promise<boolean> {
